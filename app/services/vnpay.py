@@ -27,11 +27,14 @@ class VNPayService:
             "vnp_OrderInfo": order_info,
             "vnp_OrderType": "other",
             "vnp_Locale": "vn",
+            "vnp_BankCode": "VISA",
+            "vnp_TransactionNo": order_id,
             "vnp_ReturnUrl": settings.VNPAY_RETURN_URL,
+            "vnp_CreateDate": curr_time.strftime('%Y%m%d%H%M%S'),
+            "vnp_ExpireDate": (curr_time.replace(day=curr_time.day+1)).strftime('%Y%m%d%H%M%S'),
             "vnp_IpAddr": ip_addr,
-            "vnp_CreateDate": curr_time.strftime('%Y%m%d%H%M%S')
         }
-        
+        print(vnp_params)
         # Log original parameters
         logger.info("Original Payment Parameters:")
         for key, value in sorted(vnp_params.items()):

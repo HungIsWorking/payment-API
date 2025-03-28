@@ -1,64 +1,46 @@
 import hashlib
 import hmac
 from typing import Dict
-from urllib.parse import quote_plus
+import urllib.parse
 from app.core.config import settings
-import logging
 
-logger = logging.getLogger(__name__)
-
-def hmacsha256(key, data):
-    """Create HMAC SHA256 signature"""
-    byteKey = key.encode('utf-8')
-    byteData = data.encode('utf-8')
-    return hmac.new(byteKey, byteData, hashlib.sha256).hexdigest()
-
-def create_vnpay_secure_hash(params: Dict[str, str]) -> str:
-    """Create VNPAY secure hash from parameters using SHA256"""
-    # Remove hash key if exists
-    if 'vnp_SecureHash' in params:
-        params.pop('vnp_SecureHash')
+def create_vnpay_secure_hash(data: Dict[str, str]) -> str:
+    """
+    Create a secure hash for VNPay payment request
+    VNPay requires a specific way of creating the hash:
+    1. Sort the parameters alphabetically
+    2. Create a query string without URL encoding 
+    3. Apply HMAC-SHA512 using the secret key
+    """
+    # Create a sorted list of parameters
+    sorted_items = sorted(data.items())
     
-    # Convert all values to strings
-    for key in params:
-        params[key] = str(params[key])
+    # Build query string without encoding
+    hash_data = "&".join([f"{key}={value}" for key, value in sorted_items])
     
-    # Sort parameters by key
-    sorted_keys = sorted(params.keys())
-    
-    # Create data string EXACTLY as VNPAY requires
-    hash_data = ""
-    for key in sorted_keys:
-        if hash_data:
-            hash_data += "&"
-        hash_data += f"{key}={params[key]}"
-    
-    # Log the exact string being hashed
-    logger.info(f"Hash data string: {hash_data}")
-    
-    # Create secure hash using HMAC-SHA256
+    # Create HMAC-SHA512 hash
     hmac_obj = hmac.new(
-        settings.VNPAY_HASH_SECRET.encode('utf-8'),
-        hash_data.encode('utf-8'),
-        hashlib.sha256
+        bytes(settings.VNPAY_HASH_SECRET, 'utf-8'),
+        bytes(hash_data, 'utf-8'), 
+        hashlib.sha512
     )
-    secure_hash = hmac_obj.hexdigest().upper()
     
-    return secure_hash
+    return hmac_obj.hexdigest()
 
-def verify_vnpay_response(params: Dict[str, str]) -> bool:
-    """Verify VNPAY response signature"""
-    if 'vnp_SecureHash' not in params:
+def verify_vnpay_response(response_data: Dict[str, str]) -> bool:
+    """
+    Verify the VNPay response signature
+    """
+    # Extract the secure hash from the response
+    received_hash = response_data.get("vnp_SecureHash", "")
+    if not received_hash:
         return False
     
-    # Get secure hash from response
-    received_hash = params.pop('vnp_SecureHash')
+    # Create a copy of the data without the secure hash
+    data_to_verify = {k: v for k, v in response_data.items() if k != "vnp_SecureHash" and k != "vnp_SecureHashType"}
     
-    # Calculate hash from received parameters
-    calculated_hash = create_vnpay_secure_hash(params)
+    # Compute the expected hash
+    expected_hash = create_vnpay_secure_hash(data_to_verify)
     
-    # Log both hashes for debugging
-    logger.info(f"Received hash: {received_hash}")
-    logger.info(f"Calculated hash: {calculated_hash}")
-    
-    return received_hash.upper() == calculated_hash.upper()
+    # Compare the hashes
+    return expected_hash.lower() == received_hash.lower()
